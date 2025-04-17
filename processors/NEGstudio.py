@@ -289,6 +289,18 @@ class NEG:
             self.attempt = self.attempt + 1
         return self.corners
     
-    def __sampleArea(self):
-        self.sample = self.img
+    def BGR2LAB(self,img):
+        self.INVERTEDImg = 255-img
+        self.LABImg = cv2.cvtColor(self.INVERTEDImg, cv2.COLOR_BGR2LAB)
+        L,A,B = cv2.split(self.LABImg)
+        return L,A,B
     
+    def convertNEG(self):
+        L,A,B = self.BGR2LAB(self.img)
+        L= np.clip(L,0,255).astype(np.uint8)
+        A = A +2
+        B = B+26
+        A = np.clip(A,0,255).astype(np.uint8)
+        B = np.clip(B,0,255).astype(np.uint8)
+        self.LABImg = cv2.merge((L,A,B))
+        self.OUTPUT = cv2.cvtColor(self.LABImg, cv2.COLOR_LAB2BGR)
