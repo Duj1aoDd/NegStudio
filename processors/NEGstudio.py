@@ -295,12 +295,117 @@ class NEG:
         L,A,B = cv2.split(self.LABImg)
         return L,A,B
     
-    def convertNEG(self):
-        L,A,B = self.BGR2LAB(self.img)
-        L= np.clip(L,0,255).astype(np.uint8)
-        A = A +2
-        B = B+26
-        A = np.clip(A,0,255).astype(np.uint8)
-        B = np.clip(B,0,255).astype(np.uint8)
-        self.LABImg = cv2.merge((L,A,B))
-        self.OUTPUT = cv2.cvtColor(self.LABImg, cv2.COLOR_LAB2BGR)
+    def convertNEG_shabi(self):
+        self.LABImg = cv2.cvtColor(self.img, cv2.COLOR_BGR2LAB)
+        L,A,B = cv2.split(self.LABImg)
+        A = A-13
+        B = B-30
+        A = np.clip(A, 0, 255)
+        B = np.clip(B, 0, 255)
+        self.Final = cv2.merge((L,A,B))
+        self.OUTPUT = cv2.cvtColor(self.Final, cv2.COLOR_LAB2BGR)
+        self.OUTPUT = 255-self.OUTPUT
+        return self.OUTPUT
+    
+    def HLanalyse_absolute(self,imageChannle):
+        #imageChannle = cv2.GaussianBlur(imageChannle, (3, 3), 0)
+        high = np.max(imageChannle)
+        low = np.min(imageChannle)
+        return([high,low])
+    
+    def channleAlignment(self,imageChannle):
+        high,low = self.HLanalyse_absolute(imageChannle)
+        print("high:",high,"low:",low)
+        imageChannle = imageChannle - low
+        imageChannle = imageChannle*(255/(high-low))
+        imageChannle = np.clip(imageChannle, 0, 255)
+        return imageChannle
+
+
+    def convertNEG_v1(self):
+        # 分离 self.img 的 BGR 三通道
+        b, g, r = cv2.split(self.img)   
+        b = self.channleAlignment(b)
+        print(np.max(b),np.min(b))
+        g = self.channleAlignment(g)
+        print(np.max(g),np.min(g))
+        r = self.channleAlignment(r)
+        print(np.max(r),np.min(r))
+        # 合并通道，注意顺序为 BGR
+        self.Final = cv2.merge((b, g, r)).astype(np.uint8)
+        self.Final = 255-self.Final
+        self.OUTPUT = cv2.cvtColor(self.Final, cv2.COLOR_LAB2BGR)
+        return None
+
+    def __findCorner(self):
+        print("Hbroader:", self.Hbroader)
+        print("Vbroader:", self.Vbroader)
+
+        if len(self.Hbroader) < 2 or len(self.Vbroader) < 2:
+            print("水平线或垂直线不足，无法计算交点")
+            return
+
+        # 获取水平线和垂直线的坐标
+        H1 = self.Hbroader[0]
+        H2 = self.Hbroader[1]
+        V1 = self.Vbroader[0]
+        V2 = self.Vbroader[1]
+
+        # 获取水平线的参数 (A, B, C)
+        A1, B1, C1 = self.line_to_general(H1)
+        A2, B2, C2 = self.line_to_general(H2)
+
+        # 获取垂直线的参数 (A, B, C)
+        A3, B3, C3 = self.line_to_general(V1)
+        A4, B4, C4 = self.line_to_general(V2)
+
+        corner1 = self.solve_intersection(A1, B1, C1, A3, B3, C3)  # 左上
+        corner2 = self.solve_intersection(A1, B1, C1, A4, B4, C4)  # 右上
+        corner3 = self.solve_intersection(A2, B2, C2, A4, B4, C4)  # 右下
+        corner4 = self.solve_intersection(A2, B2, C2, A3, B3, C3)  # 左下
+
+        if corner1 is not None and corner2 is not None and corner3 is not None and corner4 is not None:
+            self.corners = [-1*corner1, -1*corner2, -1*corner3, -1*corner4]
+        else:
+            print("某些交点计算失败")
+            self.corners = []
+
+        print("corners:", self.corners)       
+        
+    def FindBroaders(self):
+        self.HoughTF()
+        self.__findTangent()
+        self.__tangent2angle()
+        self.__findHV()
+        self.__findHVbroader()
+        self.__findCorner()
+        print("corners:",self.corners)
+        while self.blackBroadVerify():
+            print("attempt:",self.attempt,"upbroad:",self.upperBroad,"lowbroad:",self.lowerBroad,"rightbroad:",self.rightBroad,"leftbroad:",self.leftBroad)
+            self.HoughTF()
+            self.__findTangent()
+            self.__tangent2angle()
+            self.__findHV()
+            self.__findHVbroader()
+            self.__findCorner()
+            self.attempt = self.attempt + 1
+        return self.corners
+    
+    def BGR2LAB(self,img):
+        self.INVERTEDImg = 255-img
+        self.LABImg = cv2.cvtColor(self.INVERTEDImg, cv2.COLOR_BGR2LAB)
+        L,A,B = cv2.split(self.LABImg)
+        return L,A,B
+    
+    def convertNEG_shabi(self):
+        self.LABImg = cv2.cvtColor(self.img, cv2.COLOR_BGR2LAB)
+        L,A,B = cv2.split(self.LABImg)
+        A = A-13
+        B = B-30
+        A = np.clip(A, 0, 255)
+        B = np.clip(B, 0, 255)
+        self.Final = cv2.merge((L,A,B))
+        self.OUTPUT = cv2.cvtColor(self.Final, cv2.COLOR_LAB2BGR)
+        self.OUTPUT = 255-self.OUTPUT
+        return self.OUTPUT
+         
