@@ -6,6 +6,7 @@ class NEG:
     def __init__(self, path):
         self.attempt = 1
         self.img = cv2.imread(path)
+        self.size = self.img.shape
         self.img_broaderLinesDebug = self.img.copy()
         self.corners = []
         self.Hbroader = []
@@ -29,6 +30,7 @@ class NEG:
         self.lowerBroad = 0
         self.rightBroad = 0
         self.leftBroad = 0
+        self.matchTable = np.zeros((1,3,256),dtype = np.uint8)
     def blackBroadVerify(self):
         if len(self.corners) != 4:
             return False  # 如果角点检测不正确，返回 False
@@ -320,22 +322,31 @@ class NEG:
         imageChannle = imageChannle*(255/(high-low))
         imageChannle = np.clip(imageChannle, 0, 255)
         return imageChannle
+    
+    def linearFunction_2dot(self,x1,y1,x2,y2,x):
+        y = y1 + (y2-y1)/(x2-x1)*(x-x1)
+        return y
+    def writeLUT_linear(self, lim_b, lim_g, lim_r):
+    # Limiting range for each color channel
+        for i in range(256):
+            self.matchTable[0, 0, i] = np.clip(int(self.linearFunction_2dot(lim_b[0], 0, lim_b[1], 255, i)),0,255)
+            self.matchTable[0, 1, i] = np.clip(int(self.linearFunction_2dot(lim_g[0], 0, lim_g[1], 255, i)),0,255)
+            self.matchTable[0, 2, i] = np.clip(int(self.linearFunction_2dot(lim_r[0], 0, lim_r[1], 255, i)),0,255)
+    
+        # Clip values to ensure they stay within the 0-255 range
+        self.matchTable = self.matchTable.astype(np.uint8)
 
+        
 
     def convertNEG_v1(self):
         # 分离 self.img 的 BGR 三通道
-        b, g, r = cv2.split(self.img)   
-        b = self.channleAlignment(b)
-        print(np.max(b),np.min(b))
-        g = self.channleAlignment(g)
-        print(np.max(g),np.min(g))
-        r = self.channleAlignment(r)
-        print(np.max(r),np.min(r))
-        # 合并通道，注意顺序为 BGR
-        self.Final = cv2.merge((b, g, r)).astype(np.uint8)
-        self.Final = 255-self.Final
-        self.OUTPUT = cv2.cvtColor(self.Final, cv2.COLOR_LAB2BGR)
-        return None
+        b, g, r = cv2.split(self.img)
+        lim_b = self.HLanalyse_absolute(b)
+        lim_g = self.HLanalyse_absolute(g)
+        lim_r = self.HLanalyse_absolute(r)
+        self.writeLUT_linear(lim_b, lim_g, lim_r)
+        
+        
 
     def __findCorner(self):
         print("Hbroader:", self.Hbroader)
@@ -408,4 +419,20 @@ class NEG:
         self.OUTPUT = cv2.cvtColor(self.Final, cv2.COLOR_LAB2BGR)
         self.OUTPUT = 255-self.OUTPUT
         return self.OUTPUT
-         
+    
+    def applyLUT(self):
+    # 分离图像的各个通道
+        b, g, r = cv2.split(self.img)
+    
+    # 将 matchTable 转置为正确的 LUT 格式 (256x3)
+        lut_bgr = self.matchTable[0].T  # 转置为 256x3
+    
+    # 对每个通道应用 LUT
+        b = cv2.LUT(b, lut_bgr[:, 0].astype(np.uint8))
+        g = cv2.LUT(g, lut_bgr[:, 1].astype(np.uint8))
+        r = cv2.LUT(r, lut_bgr[:, 2].astype(np.uint8))
+    
+    # 合并回 RGB 通道
+        self.converted = cv2.merge([b, g, r])
+
+        
