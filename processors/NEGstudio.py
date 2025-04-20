@@ -30,7 +30,8 @@ class NEG:
         self.lowerBroad = 0
         self.rightBroad = 0
         self.leftBroad = 0
-        self.matchTable = np.zeros((1,3,256),dtype = np.uint8)
+        self.matchTable = np.zeros((3,256))
+        self.lUt = np.zeros((3,256))
     def blackBroadVerify(self):
         if len(self.corners) != 4:
             return False  # 如果角点检测不正确，返回 False
@@ -290,8 +291,51 @@ class NEG:
             self.__findCorner()
             self.attempt = self.attempt + 1
         return self.corners
-    
-    def BGR2LAB(self,img):
+
+
+    def warp_perspective_by_corners(self, image, corners):
+        """
+        输入：
+            image: 原始图像（BGR 或灰度）
+            corners: 四个角点，顺序为 [右下, 左下, 左上, 右上]
+        输出：
+            透视变换后的图像
+        """
+        # 将角点转换为 numpy 数组
+        pts_src = np.array([
+            corners[2],  # 左上
+            corners[3],  # 右上
+            corners[0],  # 右下
+            corners[1],  # 左下
+        ], dtype=np.float32)
+
+        # 计算目标图像的宽度和高度
+        width_top = np.linalg.norm(pts_src[0] - pts_src[1])
+        width_bottom = np.linalg.norm(pts_src[3] - pts_src[2])
+        height_left = np.linalg.norm(pts_src[0] - pts_src[3])
+        height_right = np.linalg.norm(pts_src[1] - pts_src[2])
+
+        width = int(max(width_top, width_bottom))
+        height = int(max(height_left, height_right))
+
+        # 定义目标矩形角点（左上、右上、右下、左下）
+        pts_dst = np.array([
+            [0, 0],
+            [width - 1, 0],
+            [width - 1, height - 1],
+            [0, height - 1]
+        ], dtype=np.float32)
+
+        # 计算透视变换矩阵
+        M = cv2.getPerspectiveTransform(pts_src, pts_dst)
+
+        # 应用透视变换
+        warped = cv2.warpPerspective(image, M, (width, height))
+        return warped
+    def sample(self):
+        self.sampleImage = self.warp_perspective_by_corners(self.img, self.corners)
+
+    def BGR2LAB(self, img):
         self.INVERTEDImg = 255-img
         self.LABImg = cv2.cvtColor(self.INVERTEDImg, cv2.COLOR_BGR2LAB)
         L,A,B = cv2.split(self.LABImg)
@@ -310,10 +354,10 @@ class NEG:
         return self.OUTPUT
     
     def HLanalyse_absolute(self,imageChannle):
-        #imageChannle = cv2.GaussianBlur(imageChannle, (3, 3), 0)
+        imageChannle = cv2.GaussianBlur(imageChannle, (3, 3), 0)
         high = np.max(imageChannle)
         low = np.min(imageChannle)
-        return([high,low])
+        return([float(high),float(low)])#返回的是一个数组，第一个元素是high，第二个元素是low
     
     def channleAlignment(self,imageChannle):
         high,low = self.HLanalyse_absolute(imageChannle)
@@ -329,10 +373,10 @@ class NEG:
     def writeLUT_linear(self, lim_b, lim_g, lim_r):
     # Limiting range for each color channel
         for i in range(256):
-            self.matchTable[0, 0, i] = np.clip(int(self.linearFunction_2dot(lim_b[0], 0, lim_b[1], 255, i)),0,255)
-            self.matchTable[0, 1, i] = np.clip(int(self.linearFunction_2dot(lim_g[0], 0, lim_g[1], 255, i)),0,255)
-            self.matchTable[0, 2, i] = np.clip(int(self.linearFunction_2dot(lim_r[0], 0, lim_r[1], 255, i)),0,255)
-    
+            self.matchTable[0,i] = int(self.linearFunction_2dot(lim_b[0], 255, lim_b[1], 0, i))
+            self.matchTable[1,i] = int(self.linearFunction_2dot(lim_g[0], 255, lim_g[1], 0, i))
+            self.matchTable[2,i] = int(self.linearFunction_2dot(lim_r[0], 255, lim_r[1], 0, i))
+        self.matchTable = np.clip(self.matchTable, 0, 255)
         # Clip values to ensure they stay within the 0-255 range
         self.matchTable = self.matchTable.astype(np.uint8)
 
@@ -340,7 +384,7 @@ class NEG:
 
     def convertNEG_v1(self):
         # 分离 self.img 的 BGR 三通道
-        b, g, r = cv2.split(self.img)
+        b, g, r = cv2.split(self.sampleImage)
         lim_b = self.HLanalyse_absolute(b)
         lim_g = self.HLanalyse_absolute(g)
         lim_r = self.HLanalyse_absolute(r)
@@ -402,6 +446,14 @@ class NEG:
             self.attempt = self.attempt + 1
         return self.corners
     
+
+
+
+
+
+
+    
+        
     def BGR2LAB(self,img):
         self.INVERTEDImg = 255-img
         self.LABImg = cv2.cvtColor(self.INVERTEDImg, cv2.COLOR_BGR2LAB)
@@ -425,14 +477,16 @@ class NEG:
         b, g, r = cv2.split(self.img)
     
     # 将 matchTable 转置为正确的 LUT 格式 (256x3)
-        lut_bgr = self.matchTable[0].T  # 转置为 256x3
-    
+        lut_bgr = self.matchTable
     # 对每个通道应用 LUT
-        b = cv2.LUT(b, lut_bgr[:, 0].astype(np.uint8))
-        g = cv2.LUT(g, lut_bgr[:, 1].astype(np.uint8))
-        r = cv2.LUT(r, lut_bgr[:, 2].astype(np.uint8))
+        b = cv2.LUT(b, lut_bgr[0].astype(np.uint8))
+        g = cv2.LUT(g, lut_bgr[1].astype(np.uint8))
+        r = cv2.LUT(r, lut_bgr[2].astype(np.uint8))
     
     # 合并回 RGB 通道
         self.converted = cv2.merge([b, g, r])
+        self.converted = 255 - self.converted
+        self.output = self.converted
+        return self.converted
 
         
