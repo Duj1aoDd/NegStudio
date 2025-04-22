@@ -445,15 +445,8 @@ class NEG:
             self.__findCorner()
             self.attempt = self.attempt + 1
         return self.corners
-    
 
-
-
-
-
-
-    
-        
+            
     def BGR2LAB(self,img):
         self.INVERTEDImg = 255-img
         self.LABImg = cv2.cvtColor(self.INVERTEDImg, cv2.COLOR_BGR2LAB)
@@ -489,4 +482,12 @@ class NEG:
         self.output = self.converted
         return self.converted
 
-        
+    def WBadjust_LAB(self,image):
+        L,A,B = cv2.split(cv2.cvtColor(image, cv2.COLOR_BGR2LAB))
+        A = A-22
+        B = B+25
+        A = np.clip(A, 0, 255)
+        B = np.clip(B, 0, 255)
+        Final = cv2.merge((L,A,B))
+        output = cv2.cvtColor(Final, cv2.COLOR_LAB2BGR)
+        return output
