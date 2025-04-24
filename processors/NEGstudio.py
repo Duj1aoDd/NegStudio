@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import math
 
+
 class NEG:
     def __init__(self, path):
         self.attempt = 1
@@ -294,14 +295,6 @@ class NEG:
 
 
     def warp_perspective_by_corners(self, image, corners):
-        """
-        输入：
-            image: 原始图像（BGR 或灰度）
-            corners: 四个角点，顺序为 [右下, 左下, 左上, 右上]
-        输出：
-            透视变换后的图像
-        """
-        # 将角点转换为 numpy 数组
         pts_src = np.array([
             corners[2],  # 左上
             corners[3],  # 右上
@@ -325,15 +318,11 @@ class NEG:
             [width - 1, height - 1],
             [0, height - 1]
         ], dtype=np.float32)
-
-        # 计算透视变换矩阵
         M = cv2.getPerspectiveTransform(pts_src, pts_dst)
-
-        # 应用透视变换
         warped = cv2.warpPerspective(image, M, (width, height))
         return warped
-    def sample(self):
-        self.sampleImage = self.warp_perspective_by_corners(self.img, self.corners)
+    def sample(self,sourceImg):
+        self.sampleImage = self.warp_perspective_by_corners(sourceImg, self.corners)
 
     def BGR2LAB(self, img):
         self.INVERTEDImg = 255-img
@@ -357,7 +346,7 @@ class NEG:
         imageChannle = cv2.GaussianBlur(imageChannle, (3, 3), 0)
         high = np.max(imageChannle)
         low = np.min(imageChannle)
-        return([float(high),float(low)])#返回的是一个数组，第一个元素是high，第二个元素是low
+        return([float(high),float(low)])
     
     def channleAlignment(self,imageChannle):
         high,low = self.HLanalyse_absolute(imageChannle)
@@ -371,24 +360,26 @@ class NEG:
         y = y1 + (y2-y1)/(x2-x1)*(x-x1)
         return y
     def writeLUT_linear(self, lim_b, lim_g, lim_r):
-    # Limiting range for each color channel
         for i in range(256):
             self.matchTable[0,i] = int(self.linearFunction_2dot(lim_b[0], 255, lim_b[1], 0, i))
             self.matchTable[1,i] = int(self.linearFunction_2dot(lim_g[0], 255, lim_g[1], 0, i))
             self.matchTable[2,i] = int(self.linearFunction_2dot(lim_r[0], 255, lim_r[1], 0, i))
         self.matchTable = np.clip(self.matchTable, 0, 255)
-        # Clip values to ensure they stay within the 0-255 range
         self.matchTable = self.matchTable.astype(np.uint8)
 
         
 
     def convertNEG_v1(self):
-        # 分离 self.img 的 BGR 三通道
+        self.temp = self.WBadjust_BGR(self.img,85,130,175)
+        self.sample(self.temp)
         b, g, r = cv2.split(self.sampleImage)
         lim_b = self.HLanalyse_absolute(b)
         lim_g = self.HLanalyse_absolute(g)
         lim_r = self.HLanalyse_absolute(r)
         self.writeLUT_linear(lim_b, lim_g, lim_r)
+        self.applyLUT(self.temp)
+        self.OUTPUT = self.converted
+        return self.OUTPUT
         
         
 
@@ -399,21 +390,14 @@ class NEG:
         if len(self.Hbroader) < 2 or len(self.Vbroader) < 2:
             print("水平线或垂直线不足，无法计算交点")
             return
-
-        # 获取水平线和垂直线的坐标
         H1 = self.Hbroader[0]
         H2 = self.Hbroader[1]
         V1 = self.Vbroader[0]
         V2 = self.Vbroader[1]
-
-        # 获取水平线的参数 (A, B, C)
         A1, B1, C1 = self.line_to_general(H1)
         A2, B2, C2 = self.line_to_general(H2)
-
-        # 获取垂直线的参数 (A, B, C)
         A3, B3, C3 = self.line_to_general(V1)
         A4, B4, C4 = self.line_to_general(V2)
-
         corner1 = self.solve_intersection(A1, B1, C1, A3, B3, C3)  # 左上
         corner2 = self.solve_intersection(A1, B1, C1, A4, B4, C4)  # 右上
         corner3 = self.solve_intersection(A2, B2, C2, A4, B4, C4)  # 右下
@@ -465,18 +449,12 @@ class NEG:
         self.OUTPUT = 255-self.OUTPUT
         return self.OUTPUT
     
-    def applyLUT(self):
-    # 分离图像的各个通道
-        b, g, r = cv2.split(self.img)
-    
-    # 将 matchTable 转置为正确的 LUT 格式 (256x3)
+    def applyLUT(self,souceImg):
+        b, g, r = cv2.split(souceImg)
         lut_bgr = self.matchTable
-    # 对每个通道应用 LUT
         b = cv2.LUT(b, lut_bgr[0].astype(np.uint8))
         g = cv2.LUT(g, lut_bgr[1].astype(np.uint8))
         r = cv2.LUT(r, lut_bgr[2].astype(np.uint8))
-    
-    # 合并回 RGB 通道
         self.converted = cv2.merge([b, g, r])
         self.converted = 255 - self.converted
         self.output = self.converted
@@ -491,3 +469,24 @@ class NEG:
         Final = cv2.merge((L,A,B))
         output = cv2.cvtColor(Final, cv2.COLOR_LAB2BGR)
         return output
+
+
+
+
+
+
+
+    def WBadjust_BGR(self, image, gray_b, gray_g, gray_r):
+        img_float = image.astype(np.float32)
+        B,G,R = cv2.split(img_float)
+        avg = (gray_b + gray_g + gray_r)/3
+        epsilon = 1e-6
+        gain_b = avg / (gray_b + epsilon)
+        gain_g = avg / (gray_g + epsilon)
+        gain_r = avg / (gray_r + epsilon)
+        b, g, r = cv2.split(img_float)
+        b = np.clip(b * gain_b, 0, 255)
+        g = np.clip(g * gain_g, 0, 255)
+        r = np.clip(r * gain_r, 0, 255)
+        balanced = cv2.merge([b, g, r]).astype(np.uint8)
+        return balanced        
