@@ -347,7 +347,29 @@ class NEG:
         high = np.max(imageChannle)
         low = np.min(imageChannle)
         return([float(high),float(low)])
-    
+
+    def HLanalyse_thereshold(self,imageChannle,thereshold_black,thereshold_white):
+        zft = cv2.calcHist([imageChannle], [0], None, [256], [0, 256])  # 需要将图像包装在列表中
+        print(zft)
+        s = np.sum(zft)
+        print(s)
+        # 初始化默认值（全黑或全白图像时的保护）
+        low, high = 0, 255
+        
+        # 查找有效最低值
+        for i in range(256):
+            if zft[i]/s > thereshold_black:
+                low = i
+                break  # 找到第一个满足阈值的位置后立即跳出
+        
+        # 查找有效最高值（逆向遍历）
+        for i in range(255, -1, -1):
+            if zft[i]/s > thereshold_white:
+                high = i
+                break
+        
+        return [float(high), float(low)]  # 添加返回值
+
     def channleAlignment(self,imageChannle):
         high,low = self.HLanalyse_absolute(imageChannle)
         print("high:",high,"low:",low)
@@ -370,14 +392,15 @@ class NEG:
         
 
     def convertNEG_v1(self):
-        self.temp = self.WBadjust_BGR(self.img,85,130,175)
+        self.temp = self.WBadjust_BGR(self.img,85,127,175)
         self.sample(self.temp)
         b, g, r = cv2.split(self.sampleImage)
-        lim_b = self.HLanalyse_absolute(b)
-        lim_g = self.HLanalyse_absolute(g)
-        lim_r = self.HLanalyse_absolute(r)
+        lim_b = self.HLanalyse_thereshold(b,0.0003,0.006)
+        lim_g = self.HLanalyse_thereshold(g,0.0003,0.006)
+        lim_r = self.HLanalyse_thereshold(r,0.0003,0.006)
         self.writeLUT_linear(lim_b, lim_g, lim_r)
         self.applyLUT(self.temp)
+        #以上是负片
         self.OUTPUT = self.converted
         return self.OUTPUT
         
